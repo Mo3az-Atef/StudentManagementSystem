@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>إدارة المركز الاستكشافي للعلوم و التكنولوجيا بالمنوفية </title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    
+    <style>
+        :root { --primary: #6366f1; --bg: #f8fafc; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); padding: 20px; }
+        .container { max-width: 1200px; margin: auto; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding: 5px; }
+        .tab-btn { padding: 10px 20px; border-radius: 10px; border: none; background: #e2e8f0; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: var(--primary); color: white; box-shadow: 0 4px 6px rgba(99, 102, 241, 0.3); }
+        .card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 15px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background: #f1f5f9; padding: 12px; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: center; }
+        .btn-status { width: 35px; height: 35px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; }
+        .present { background: #dcfce7; color: #166534; }
+        .absent { background: #fee2e2; color: #991b1b; }
+        .qualified { background-color: #d4edda !important; border-right: 5px solid #22c55e; }
+        .btn-action { padding: 10px 15px; border-radius: 8px; border: none; cursor: pointer; color: white; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <center><h2 style="margin-bottom: 20px;">نظام تسجيل الغياب و الحضور المركز الاستكشافي للعلوم و التكنولوجيا بالمنوفية</h2></center>
+    <div class="tabs" id="tabContainer"></div>
+    <br>
+    <div class="card">
+        <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="sName" placeholder="اسم المتدرب..." style="padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                <button onclick="addStudent()" class="btn-action" style="background:var(--primary);">إضافة طالب</button>
+                <button onclick="addLecture()" class="btn-action" style="background:#0f172a;">+ محاضرة</button>
+                <button onclick="removeLastLecture()" class="btn-action" style="background:#ef4444;">- حذف محاضرة</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; border-right: 2px solid #cbd5e1; padding-right: 15px;">
+                <label style="font-weight: bold; color: #475569;">فلتر (الحد الأدنى للحضور):</label>
+                <input type="number" id="minAttend" value="0" oninput="render()" style="width: 60px; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1;">
+            </div>
+        </div>
+
+        <table id="table">
+            <thead><tr id="hRow"></tr></thead>
+            <tbody id="bBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = {
+          apiKey: "AIzaSyBO_-DhkmJphfl3xkMtaNmKpuEFy3dKKHw",
+          authDomain: "studentmanagementsystem-dbf7a.firebaseapp.com",
+          databaseURL: "https://studentmanagementsystem-dbf7a-default-rtdb.firebaseio.com",
+          projectId: "studentmanagementsystem-dbf7a",
+          storageBucket: "studentmanagementsystem-dbf7a.firebasestorage.app",
+          messagingSenderId: "286739802765",
+          appId: "1:286739802765:web:3fa714679ebacb89b7d0c4"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const courses = ["مبادئ الإلكترونيات", "هندسة بناء الدوائر", "التمكين الرقمي (ICDL)", "أساسيات الروبوت", "تحدي الذكاء الاصطناعي", "برمجة مايكرو بايثون", "الشبكات", "اللغة الإنجليزية", "الأمن السيبراني", "برمجة المواقع", "مهارات الحياة"];
+    let currentCourse = localStorage.getItem('currentCourse') || courses[0];
+    let data = {};
+
+    db.ref('centerData').on('value', (snapshot) => {
+        data = snapshot.val() || {};
+        courses.forEach(c => { if(!data[c]) data[c] = {lectures: 0, students: []}; });
+        initTabs();
+        render();
+    });
+
+    function initTabs() {
+        const tabContainer = document.getElementById('tabContainer');
+        tabContainer.innerHTML = '';
+        courses.forEach(c => {
+            let btn = document.createElement('button');
+            btn.className = 'tab-btn' + (currentCourse === c ? ' active' : '');
+            btn.innerText = c;
+            btn.onclick = () => { localStorage.setItem('currentCourse', c); location.reload(); };
+            tabContainer.appendChild(btn);
+        });
+    }
+
+    function render() {
+        const minAttend = parseInt(document.getElementById('minAttend').value) || 0;
+        const hRow = document.getElementById('hRow');
+        const bBody = document.getElementById('bBody');
+        
+        const d = data[currentCourse];
+        if (!d) return;
+
+        hRow.innerHTML = '<th>اسم المتدرب</th>';
+        for(let i=1; i <= (d.lectures || 0); i++) hRow.innerHTML += `<th>محاضرة ${i}</th>`;
+        hRow.innerHTML += '<th>التقييم</th><th>ملاحظات</th><th>حذف</th>';
+
+        bBody.innerHTML = '';
+        
+        (d.students || []).forEach((s, idx) => {
+            let attendCount = (s.attend || []).filter(a => a).length;
+            let isQualified = attendCount >= minAttend ? 'qualified' : '';
+            
+            let row = `<tr class="${isQualified}"><td>${s.name}</td>`;
+            (s.attend || []).forEach((a, lIdx) => {
+                row += `<td><button class="btn-status ${a ? 'present' : 'absent'}" onclick="toggle(${idx}, ${lIdx})">${a ? 'ح' : 'غ'}</button></td>`;
+            });
+            row += `<td><input type="number" value="${s.score || 0}" onchange="update(this.value, ${idx}, 'score')" style="width:40px"></td>
+                    <td><input type="text" value="${s.note || ''}" onchange="update(this.value, ${idx}, 'note')"></td>
+                    <td><button onclick="del(${idx})" style="background:red; color:white">×</button></td></tr>`;
+            bBody.innerHTML += row;
+        });
+    }
+
+    function addStudent() {
+        let name = document.getElementById('sName').value.trim();
+        if(!name) return;
+        if(!data[currentCourse].students) data[currentCourse].students = [];
+        data[currentCourse].students.push({name, attend: Array(data[currentCourse].lectures || 0).fill(false), score: 0, note: ''});
+        save();
+        document.getElementById('sName').value = '';
+    }
+
+    function addLecture() {
+        data[currentCourse].lectures = (data[currentCourse].lectures || 0) + 1;
+        (data[currentCourse].students || []).forEach(s => {
+            if(!s.attend) s.attend = [];
+            s.attend.push(false);
+        });
+        save();
+    }
+
+    function removeLastLecture() {
+        if((data[currentCourse].lectures || 0) > 0) {
+            data[currentCourse].lectures--;
+            (data[currentCourse].students || []).forEach(s => s.attend.pop());
+            save();
+        }
+    }
+
+    function toggle(s, l) { data[currentCourse].students[s].attend[l] = !data[currentCourse].students[s].attend[l]; save(); }
+    function update(val, s, field) { data[currentCourse].students[s][field] = val; save(); }
+    function del(s) { data[currentCourse].students.splice(s, 1); save(); }
+    function save() { db.ref('centerData').set(data); }
+</script>
+</body>
+</html>
